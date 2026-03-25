@@ -1,7 +1,1 @@
-Chaque joueur a un canon (Bleu à gauche, Rouge à droite) et, à chaque tour, tu peux soit placer un point en cliquant sur une case vide, soit tirer avec ton canon. Pour tirer, tu déplaces ton canon verticalement avec les flèches, puis tu choisis une puissance de 1 à 9 (Ctrl + 1 à 9). Une balle jaune fait une belle trajectoire sinusoïdale et va détruire uniquement le point adverse situé sur la colonne cible (calculée en proportion : puissance 1 touche la colonne 1, puissance 9 touche la colonne 18). Attention, les points qui font déjà partie d’un alignement de 5 ou plus sont protégés et ne peuvent pas être détruits. La partie n’a pas de fin, tu peux arrêter quand tu veux avec le bouton « Terminer la partie », et le gagnant est celui qui a le plus d’alignements réalisés (donc le plus de points)
-une grande grille de 18x18 ou 9x9 où le but est de réaliser le maximum d’alignements de 5 points consécutifs de ta couleur (horizontal, vertical ou en diagonale)
-
-pas obliger 18 ont peut faire comme on veut
-Exemple si c'est 18 anh
-il y aura des points qui ne seront jamais atteint comme la 2 et 3eme case et aussi de suite comme la 5 ;7 9 11 13 15 17 eme
-le sauvegarde de la  partie de apres on charge et sa s’affiche dans  base la partie charge
+Pour lancer c`est python3 game.py
