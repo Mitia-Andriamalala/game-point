@@ -16,7 +16,11 @@ CONFIG = {
     'grid_size_max'     : 30,
 
     # Regle de victoire
-    'align_length'      : 5,    # points consecutifs pour un alignement
+    'align_length'      : 5,    # points consecutifs pour un alignement normal
+
+    # Alea — carre de placement
+    'alea_threshold'    : 10,   # nb de points sur le board pour declencher l'alea
+    'alea_align'        : 4,    # alignement requis quand l'alea est actif
 
     # Canon
     'power_min'         : 1,    # puissance minimale  (Ctrl + power_min)
@@ -82,10 +86,26 @@ def db_load():
 # ================================================================
 DIRS = [(0, 1), (1, 0), (1, 1), (1, -1)]
 
+def count_points(grid, N):
+    """Compte le nombre de points de chaque joueur sur le board."""
+    counts = [0, 0]
+    for r in range(N):
+        for c in range(N):
+            v = grid[r][c]
+            if v:
+                counts[v - 1] += 1
+    return counts
+
+def align_len_for(player_idx, grid, N):
+    """Retourne la longueur d'alignement requise selon l'etat de l'alea."""
+    counts = count_points(grid, N)
+    if counts[player_idx] >= CONFIG['alea_threshold']:
+        return CONFIG['alea_align']
+    return CONFIG['align_length']
+
 def recompute(state):
     N    = state['N']
     grid = state['grid']
-    L    = CONFIG['align_length']
     aset = set()
 
     for r in range(N):
@@ -93,6 +113,7 @@ def recompute(state):
             v = grid[r][c]
             if not v:
                 continue
+            L = align_len_for(v - 1, grid, N)
             for dr, dc in DIRS:
                 cells, ok = [], True
                 for k in range(L):
@@ -106,6 +127,7 @@ def recompute(state):
 
     scores = [0, 0]
     for pl in range(1, 3):
+        L = align_len_for(pl - 1, grid, N)
         for dr, dc in DIRS:
             for r in range(N):
                 for c in range(N):
@@ -159,6 +181,15 @@ def draw_game(screen, state, fonts, toast, ball_anim):
     screen.blit(s1, (W - 16 - s1.get_width(), 12))
 
     buttons = _draw_buttons(screen, fonts, W, 40)
+
+    # --- Indicateurs alea ---
+    pts = count_points(state['grid'], N)
+    for idx, (color, side) in enumerate([(CONFIG['BLUE'], 16), (CONFIG['RED'], W - 16)]):
+        if pts[idx] >= CONFIG['alea_threshold']:
+            tag = fonts['small'].render('CARRE ACTIF', True, CONFIG['GOLD'])
+            x   = side if idx == 0 else side - tag.get_width()
+            pygame.draw.rect(screen, (60, 50, 0), (x - 4, 54, tag.get_width() + 8, tag.get_height() + 4), border_radius=4)
+            screen.blit(tag, (x, 56))
 
     # --- Barre info ---
     cols = sorted({power_to_col(p, N) + 1 for p in range(CONFIG['power_min'], CONFIG['power_max'] + 1)})
@@ -508,15 +539,34 @@ def main():
                     show_end = True
 
                 else:
-                    # Clic sur la grille → placer un point
+                    # Clic sur la grille → placer un point (ou un carre 2x2 si alea actif)
                     gx = mx - P
                     gy = my - P - H
                     c_ = gx // C
                     r_ = gy // C
-                    if 0 <= c_ < N and 0 <= r_ < N and state['grid'][r_][c_] == 0:
-                        state['grid'][r_][c_] = state['turn'] + 1
-                        recompute(state)
-                        state['turn'] = 1 - state['turn']
+                    if 0 <= c_ < N and 0 <= r_ < N:
+                        player  = state['turn'] + 1
+                        pts_now = count_points(state['grid'], N)
+                        alea    = pts_now[state['turn']] >= CONFIG['alea_threshold']
+
+                        if alea:
+                            # Placement en carre 2x2 (cases vides uniquement)
+                            placed = False
+                            for dr in range(2):
+                                for dc in range(2):
+                                    nr, nc = r_ + dr, c_ + dc
+                                    if 0 <= nr < N and 0 <= nc < N and state['grid'][nr][nc] == 0:
+                                        state['grid'][nr][nc] = player
+                                        placed = True
+                            if placed:
+                                recompute(state)
+                                state['turn'] = 1 - state['turn']
+                        else:
+                            # Placement normal
+                            if state['grid'][r_][c_] == 0:
+                                state['grid'][r_][c_] = player
+                                recompute(state)
+                                state['turn'] = 1 - state['turn']
 
         # Rendu
         buttons = draw_game(screen, state, fonts, toast, ball_anim)
