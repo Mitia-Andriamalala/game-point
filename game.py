@@ -273,11 +273,15 @@ def draw_end_modal(screen, state, fonts, W, TH):
     screen.blit(title, (W // 2 - title.get_width() // 2, my + 28))
     screen.blit(body,  (W // 2 - body.get_width()  // 2, my + 72))
 
-    ok = pygame.Rect(W // 2 - 50, my + 118, 100, 34)
-    pygame.draw.rect(screen, CONFIG['GREEN'], ok, border_radius=6)
-    ok_txt = fonts['small'].render('OK', True, CONFIG['TEXT'])
-    screen.blit(ok_txt, (ok.centerx - ok_txt.get_width() // 2, ok.centery - ok_txt.get_height() // 2))
-    return ok
+    ok  = pygame.Rect(W // 2 - 115, my + 118, 100, 34)
+    new = pygame.Rect(W // 2 + 15,  my + 118, 130, 34)
+    pygame.draw.rect(screen, (48, 54, 61),   ok,  border_radius=6)
+    pygame.draw.rect(screen, CONFIG['GREEN'], new, border_radius=6)
+    ok_txt  = fonts['small'].render('Continuer', True, CONFIG['TEXT'])
+    new_txt = fonts['small'].render('Nouvelle partie', True, CONFIG['TEXT'])
+    screen.blit(ok_txt,  (ok.centerx  - ok_txt.get_width()  // 2, ok.centery  - ok_txt.get_height() // 2))
+    screen.blit(new_txt, (new.centerx - new_txt.get_width() // 2, new.centery - new_txt.get_height() // 2))
+    return ok, new
 
 # ================================================================
 # ECRAN DE CONFIGURATION
@@ -369,7 +373,21 @@ def main():
     toast_timer = 0
     show_end    = False
     ok_rect     = None
+    new_rect    = None
     buttons     = {}
+
+    def reset_game():
+        nonlocal ball_anim, toast, toast_timer, show_end
+        state['grid']      = [[0] * N for _ in range(N)]
+        state['can_row']   = [N // 2, N // 2]
+        state['scores']    = [0, 0]
+        state['align_set'] = set()
+        state['turn']      = 0
+        ball_anim   = None
+        toast       = ''
+        toast_timer = 0
+        show_end    = False
+        recompute(state)
 
     # --- Helpers locaux ---
     def set_toast(msg):
@@ -443,8 +461,11 @@ def main():
 
             # Modal fin de partie
             if show_end:
-                if e.type == pygame.MOUSEBUTTONDOWN and ok_rect and ok_rect.collidepoint(e.pos):
-                    show_end = False
+                if e.type == pygame.MOUSEBUTTONDOWN:
+                    if ok_rect and ok_rect.collidepoint(e.pos):
+                        show_end = False          # continuer avec le meme plateau
+                    elif new_rect and new_rect.collidepoint(e.pos):
+                        reset_game()              # nouvelle partie vide
                 continue
 
             if busy:
@@ -500,7 +521,7 @@ def main():
         # Rendu
         buttons = draw_game(screen, state, fonts, toast, ball_anim)
         if show_end:
-            ok_rect = draw_end_modal(screen, state, fonts, W, TH)
+            ok_rect, new_rect = draw_end_modal(screen, state, fonts, W, TH)
         pygame.display.flip()
 
 if __name__ == '__main__':
