@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Game Point</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d1117; color: #e6edf3; font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 16px; }
+h1 { margin-bottom: 16px; font-size: 22px; color: #58a6ff; letter-spacing: 2px; }
+
+#setup { text-align: center; padding: 40px 20px; }
+#setup h2 { font-size: 28px; margin-bottom: 20px; color: #58a6ff; }
+#setup label { font-size: 16px; display: block; margin-bottom: 12px; }
+#setup input { width: 70px; padding: 6px 10px; background: #161b22; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; font-size: 16px; text-align: center; }
+#startBtn { margin-top: 20px; padding: 12px 36px; background: #238636; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
+#startBtn:hover { background: #2ea043; }
+
+#game { display: none; flex-direction: column; align-items: center; gap: 10px; }
+#hud { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.score-box { padding: 8px 16px; border-radius: 8px; font-size: 15px; font-weight: bold; }
+.score-blue { background: rgba(88,166,255,0.15); border: 1px solid #58a6ff; color: #58a6ff; }
+.score-red  { background: rgba(255,80,80,0.15);  border: 1px solid #ff5050; color: #ff5050; }
+.score-box span { font-size: 22px; }
+#turnBadge { padding: 6px 16px; border-radius: 20px; font-size: 14px; font-weight: bold; }
+.turn-blue { background: #58a6ff; color: #0d1117; }
+.turn-red  { background: #ff5050; color: #0d1117; }
+
+#btnRow { display: flex; gap: 10px; }
+button.btn { padding: 7px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; }
+.btn-end  { background: #da3633; color: white; }
+.btn-save { background: #238636; color: white; }
+.btn-load { background: #9e6a03; color: white; }
+.btn-end:hover  { background: #f85149; }
+.btn-save:hover { background: #2ea043; }
+.btn-load:hover { background: #d29922; }
+
+#info { font-size: 12px; color: #8b949e; text-align: center; }
+canvas { display: block; cursor: crosshair; border: 1px solid #21262d; border-radius: 4px; }
+
+#overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; display: flex; align-items: center; justify-content: center; }
+#overlay.hidden { display: none; }
+#modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 32px 40px; text-align: center; max-width: 380px; }
+#modal h2 { font-size: 22px; margin-bottom: 12px; }
+#modal p  { color: #8b949e; margin-bottom: 20px; }
+#modal button { padding: 10px 30px; background: #238636; color: white; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="setup">
+  <h2>Game Point</h2>
+  <label>Taille de la grille :
+    <input type="number" id="gridSize" value="12" min="5" max="30">
+  </label>
+  <p style="color:#8b949e;font-size:13px;margin-top:8px;">Recommandé : 9–18 cases</p>
+  <button id="startBtn" onclick="startGame()">Démarrer</button>
+</div>
+
+<div id="game">
+  <div id="hud">
+    <div class="score-box score-blue">Bleu : <span id="sBlue">0</span></div>
+    <div id="turnBadge" class="turn-blue">Tour : BLEU</div>
+    <div class="score-box score-red">Rouge : <span id="sRed">0</span></div>
+    <div id="btnRow">
+      <button class="btn btn-save" onclick="saveGame()">Sauvegarder</button>
+      <button class="btn btn-load" onclick="loadGame()">Charger</button>
+      <button class="btn btn-end"  onclick="endGame()">Terminer</button>
+    </div>
+  </div>
+  <div id="info">Clique pour placer · Flèches ↑↓ pour viser · Ctrl+1–9 pour tirer</div>
+  <canvas id="c"></canvas>
+</div>
+
+<div id="overlay" class="hidden">
+  <div id="modal">
+    <h2 id="mTitle"></h2>
+    <p id="mBody"></p>
+    <button onclick="closeModal()">OK</button>
+  </div>
+</div>
+
+<script>
+const CELL = 38, PAD = 52, CANNON_W = 14;
+let N, grid, canRow, scores, alignSet, turn, busy, canvas, ctx;
+
+function startGame() {
+  N = Math.max(5, Math.min(30, parseInt(document.getElementById('gridSize').value) || 12));
+  grid = Array.from({length:N}, () => new Array(N).fill(0));
+  canRow = [Math.floor(N/2), Math.floor(N/2)];
+  scores = [0, 0];
+  alignSet = new Set();
+  turn = 0; // 0=blue, 1=red
+  busy = false;
+
+  canvas = document.getElementById('c');
+  ctx = canvas.getContext('2d');
+  canvas.width  = N * CELL + PAD * 2;
+  canvas.height = N * CELL + PAD * 2;
+
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('game').style.display  = 'flex';
+
+  canvas.onclick   = onClickCanvas;
+  document.onkeydown = onKey;
+  draw();
+  updateHUD();
+}
+
+/* ── helpers ─────────────────────────────────────────── */
+function colX(c)  { return PAD + c * CELL + CELL/2; }
+function rowY(r)  { return PAD + r * CELL + CELL/2; }
+
+// power 1–9 → column index 0–(N-1)
+function powerToCol(p) { return Math.round((p-1)/8 * (N-1)); }
+
+/* ── alignments ──────────────────────────────────────── */
+function recompute() {
+  alignSet = new Set();
+  const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++) {
+    const v = grid[r][c]; if (!v) continue;
+    for (const [dr,dc] of dirs) {
+      let cells = [], ok = true;
+      for (let k=0;k<5;k++) {
+        const nr=r+dr*k, nc=c+dc*k;
+        if (nr<0||nr>=N||nc<0||nc>=N||grid[nr][nc]!==v){ok=false;break;}
+        cells.push(`${nr},${nc}`);
+      }
+      if (ok) cells.forEach(k=>alignSet.add(k));
+    }
+  }
+  // count distinct alignments per player
+  scores = [0,0];
+  for (let pl=1;pl<=2;pl++) {
+    for (const [dr,dc] of dirs) {
+      for (let r=0;r<N;r++) for (let c=0;c<N;c++) {
+        if (grid[r][c]!==pl) continue;
+        const pr=r-dr, pc=c-dc;
+        if (pr>=0&&pr<N&&pc>=0&&pc<N&&grid[pr][pc]===pl) continue;
+        let len=0, nr=r, nc=c;
+        while(nr>=0&&nr<N&&nc>=0&&nc<N&&grid[nr][nc]===pl){len++;nr+=dr;nc+=dc;}
+        if (len>=5) scores[pl-1]++;
+      }
+    }
+  }
+}
+
+/* ── draw ────────────────────────────────────────────── */
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+
+  // background
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0,0,W,H);
+
+  // grid
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  for (let i=0;i<=N;i++) {
+    const x = PAD + i*CELL, y = PAD + i*CELL;
+    ctx.beginPath(); ctx.moveTo(x,PAD); ctx.lineTo(x,PAD+N*CELL); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(PAD,y); ctx.lineTo(PAD+N*CELL,y); ctx.stroke();
+  }
+
+  // col numbers (small)
+  ctx.fillStyle = '#484f58'; ctx.font = '10px Arial'; ctx.textAlign='center';
+  for (let c=0;c<N;c++) ctx.fillText(c+1, colX(c), PAD-6);
+
+  // aligned highlights
+  alignSet.forEach(k => {
+    const [r,c] = k.split(',').map(Number);
+    ctx.fillStyle = grid[r][c]===1 ? 'rgba(88,166,255,0.18)' : 'rgba(255,80,80,0.18)';
+    ctx.fillRect(PAD+c*CELL+1, PAD+r*CELL+1, CELL-2, CELL-2);
+  });
+
+  // points
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++) {
+    const v = grid[r][c]; if (!v) continue;
+    const prot = alignSet.has(`${r},${c}`);
+    ctx.beginPath();
+    ctx.arc(colX(c), rowY(r), CELL*0.32, 0, Math.PI*2);
+    ctx.fillStyle = v===1 ? '#58a6ff' : '#ff5050';
+    ctx.fill();
+    if (prot) {
+      ctx.strokeStyle = '#f0c000'; ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  // cannons
+  drawCannon(0); drawCannon(1);
+}
+
+function drawCannon(p) {
+  const r   = canRow[p];
+  const cy  = rowY(r);
+  const col = p===0 ? '#58a6ff' : '#ff5050';
+  const active = (turn===p);
+
+  ctx.fillStyle   = col;
+  ctx.strokeStyle = active ? '#f0c000' : '#21262d';
+  ctx.lineWidth   = active ? 3 : 1;
+
+  if (p===0) {
+    const cx = PAD - CANNON_W - 6;
+    drawRect(cx-14, cy-9, 28, 18, 4);
+    ctx.fillRect(cx+10, cy-4, 16, 8);
+    // arrow indicator
+    if (active) { ctx.fillStyle='#f0c000'; drawArrow(cx-16, cy, -1); }
+  } else {
+    const cx = PAD + N*CELL + CANNON_W + 6;
+    drawRect(cx-14, cy-9, 28, 18, 4);
+    ctx.fillRect(cx-26, cy-4, 16, 8);
+    if (active) { ctx.fillStyle='#f0c000'; drawArrow(cx+16, cy, 1); }
+  }
+}
+
+function drawRect(x,y,w,h,r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+}
+
+function drawArrow(x,y,dir) {
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x-dir*10, y-6); ctx.lineTo(x-dir*10, y+6);
+  ctx.closePath(); ctx.fill();
+}
+
+/* ── interactions ────────────────────────────────────── */
+function onClickCanvas(e) {
+  if (busy) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left - PAD;
+  const my = e.clientY - rect.top  - PAD;
+  const c = Math.floor(mx/CELL), r = Math.floor(my/CELL);
+  if (c<0||c>=N||r<0||r>=N||grid[r][c]) return;
+  grid[r][c] = turn+1;
+  recompute(); draw(); nextTurn(); updateHUD();
+}
+
+function onKey(e) {
+  if (busy) return;
+  if (e.key==='ArrowUp')   { canRow[turn]=Math.max(0,canRow[turn]-1); draw(); e.preventDefault(); }
+  if (e.key==='ArrowDown') { canRow[turn]=Math.min(N-1,canRow[turn]+1); draw(); e.preventDefault(); }
+  if (e.ctrlKey && e.key>='1' && e.key<='9') {
+    e.preventDefault();
+    fire(powerToCol(+e.key));
+  }
+}
+
+function fire(tc) {
+  const opp = turn===0 ? 2 : 1;
+  const tr   = canRow[turn];
+
+  animateBall(tr, tc, () => {
+    if (grid[tr][tc]===opp) {
+      if (alignSet.has(`${tr},${tc}`)) {
+        showToast('Point protégé — alignement en cours');
+      } else {
+        grid[tr][tc] = 0;
+        recompute();
+      }
+    }
+    nextTurn(); draw(); updateHUD();
+  });
+}
+
+function animateBall(tr, tc, cb) {
+  busy = true;
+  const sx = turn===0 ? PAD-20 : PAD+N*CELL+20;
+  const sy = rowY(canRow[turn]);
+  const ex = colX(tc), ey = rowY(tr);
+  const F  = 45;
+  let f    = 0;
+
+  const dx = ex-sx, dy = ey-sy;
+  const len = Math.sqrt(dx*dx+dy*dy)||1;
+  const amp = Math.min(len*0.25, CELL*2.5);
+
+  function step() {
+    f++;
+    const t  = f/F;
+    const lx = sx+dx*t, ly = sy+dy*t;
+    const perp = Math.sin(t*Math.PI*4)*amp*(1-t);
+    const px = -dy/len*perp, py = dx/len*perp;
+    draw();
+    ctx.beginPath();
+    ctx.arc(lx+px, ly+py, 7, 0, Math.PI*2);
+    ctx.fillStyle = '#ffd700';
+    ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 18;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    if (f<F) requestAnimationFrame(step);
+    else { busy=false; cb(); }
+  }
+  requestAnimationFrame(step);
+}
+
+/* ── UI helpers ──────────────────────────────────────── */
+function nextTurn() { turn = 1-turn; }
+
+function updateHUD() {
+  document.getElementById('sBlue').textContent = scores[0];
+  document.getElementById('sRed').textContent  = scores[1];
+  const badge = document.getElementById('turnBadge');
+  if (turn===0) { badge.textContent='Tour : BLEU';  badge.className='turn-blue'; }
+  else          { badge.textContent='Tour : ROUGE'; badge.className='turn-red'; }
+
+  // show reachable columns
+  const cols = [];
+  for (let p=1;p<=9;p++) cols.push(powerToCol(p)+1);
+  const uniq = [...new Set(cols)].sort((a,b)=>a-b);
+  document.getElementById('info').textContent =
+    `Clique pour placer · Flèches ↑↓ viser (rangée ${canRow[turn]+1}) · Ctrl+1–9 tirer → colonnes atteignables : ${uniq.join(', ')}`;
+}
+
+function showToast(msg) {
+  document.getElementById('info').textContent = msg;
+  setTimeout(updateHUD, 2500);
+}
+
+/* ── save / load ─────────────────────────────────────── */
+const API = 'http://localhost:5000/api';
+
+async function saveGame() {
+  const s = {N, grid, canRow, scores, alignSet:[...alignSet], turn};
+  try {
+    await fetch(`${API}/save`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(s)});
+    showToast('Partie sauvegardée');
+  } catch(e) { showToast('Erreur de connexion au serveur'); }
+}
+
+async function loadGame() {
+  try {
+    const res = await fetch(`${API}/load`);
+    const json = await res.json();
+    if (!json.ok) { showToast(json.msg || 'Aucune sauvegarde'); return; }
+    const s = json.data;
+    N = s.N; grid = s.grid; canRow = s.canRow; scores = s.scores;
+    alignSet = new Set(s.alignSet); turn = s.turn;
+    canvas.width  = N*CELL+PAD*2;
+    canvas.height = N*CELL+PAD*2;
+    draw(); updateHUD();
+    showToast('Partie chargée');
+  } catch(e) { showToast('Erreur de connexion au serveur'); }
+}
+
+/* ── end ─────────────────────────────────────────────── */
+function endGame() {
+  const w = scores[0]>scores[1] ? 'Bleu gagne !' : scores[1]>scores[0] ? 'Rouge gagne !' : 'Egalite !';
+  document.getElementById('mTitle').textContent = w;
+  document.getElementById('mBody').textContent  = `Bleu : ${scores[0]} alignement(s) — Rouge : ${scores[1]} alignement(s)`;
+  document.getElementById('overlay').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('overlay').classList.add('hidden');
+}
+</script>
+</body>
+</html>

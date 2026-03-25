@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.env
+.playwright-mcp/
+test_final.png
